@@ -1,0 +1,51 @@
+# Environment variables
+.env
+.env.*
+*.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environment
+venv/
+.venv/
+env/
+ENV/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Tests / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.cache/
+.mypy_cache/
+.ruff_cache/
+
+# Test files (kept local only)
+tests/
+conftest.py
+pytest.ini
+requirements-dev.txt
+
+# Personal local-only TODOs / reminders
+TODO_*.md
+
+# Claude Code
+.claude/
+CLAUDE.local.md
