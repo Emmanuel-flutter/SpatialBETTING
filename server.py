@@ -138,6 +138,8 @@ async def ws(websocket: WebSocket) -> None:
         await websocket.send_json({"type": "snapshot", "data": channel.state.snapshot()})
         if channel.track.source == "events":
             await websocket.send_json(channel.track_message())
+        if channel.odds and channel.odds.last:
+            await websocket.send_json(channel.odds.last)
         room.roulette.connect(player_id, send_game)
         room.www.connect(player_id, send_game)
         room.penalty.connect(player_id, send_game)

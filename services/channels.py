@@ -8,6 +8,7 @@ from services.balltrack import BallTrack
 from services.demo import DemoFeed
 from services.feed import FixtureFeed
 from services.hub import Hub
+from services.liveodds import LiveOdds
 from services.match_state import MatchState
 from services.penalty import PenaltyPot
 from services.wallet import Wallets
@@ -65,6 +66,8 @@ class Channel:
         self.is_demo = demo is not None
         # The demo has a real ball track; a live match has only Opta events, so the path is estimated.
         self.track = BallTrack("tracking" if demo and demo.get("ball") else "events")
+        # Odds that move with the ball: demo only, since they need the real ball track and who has the ball.
+        self.odds = LiveOdds(demo["odds"]) if demo and demo.get("ball") and demo.get("odds") else None
         self._loop, self._wallets = loop, wallets
         self.rooms: dict[str, Room] = {}
         self.viewers = 0
@@ -92,6 +95,8 @@ class Channel:
             self.phase = "pre"
             if demo:
                 loop.call_soon_threadsafe(self._void_all, "the demo jumped in time")
+            if self.odds:
+                loop.call_soon_threadsafe(lambda: self.hub.publish(self.odds.clear()))
 
         if demo:
             self.feed = DemoFeed(demo["events"], self.state, on_update, on_caught_up, on_reset=on_reset,
@@ -168,6 +173,10 @@ class Channel:
 
     def _on_ball(self, ball: dict) -> None:
         self.hub.publish({"type": "ball", **ball})
+        if self.odds:
+            message = self.odds.update(ball["x"], ball["y"], ball.get("possession"))
+            if message:
+                self.hub.publish(message)
         self.track.add_tracking(time.time(), ball["x"], ball["y"], bool(ball["live"]))
 
     def game_phase(self) -> str:

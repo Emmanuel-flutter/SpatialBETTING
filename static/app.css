@@ -873,3 +873,9 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--blue); outline-
 .board-under { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; min-height: 0; }
 .board-under .ball-flag { position: static; }
 .board .cell.no-price .price { opacity: 0; }
+/* Live odds: the pill flashes when the price moves with the ball. */
+.board .cell.shorter .price rect { animation: odds-shorter 900ms ease-out; }
+.board .cell.longer .price rect { animation: odds-longer 900ms ease-out; }
+@keyframes odds-shorter { from { fill: #2fbf71; } }
+@keyframes odds-longer { from { fill: #e5484d; } }
+@media (prefers-reduced-motion: reduce) { .board .cell.shorter .price rect, .board .cell.longer .price rect { animation: none; } }

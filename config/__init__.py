@@ -23,7 +23,8 @@ ROULETTE_START_BALANCE = float(os.getenv("ROULETTE_START_BALANCE", "1000"))
 # Demo matches: a recorded match played on the real clock, with its 5 Hz ball track.
 # Built by tools/build_demo.py from the Elite Soccer Dataset (Bassek et al. 2025, CC BY 4.0).
 DEMO_MATCHES = {
-    "demo-j03wmx": {"events": "data/demo/j03wmx.json", "ball": "data/demo/j03wmx_ball.json"},
+    "demo-j03wmx": {"events": "data/demo/j03wmx.json", "ball": "data/demo/j03wmx_ball.json",
+                    "odds": "data/pricing/demo_j03wmx.json"},
 }
 
 KAFKA_CONSUMER_CONFIG = {

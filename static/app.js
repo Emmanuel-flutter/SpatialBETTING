@@ -304,7 +304,7 @@ const OUTSIDE_LABEL = {
   third1: "Zones 1-12", third2: "Zones 13-24", third3: "Zones 25-36", row1: "Top channel", row2: "Centre", row3: "Bottom channel",
 };
 // The betslip is per market, in the browser only: nothing is staked until Place bet.
-const game = { state: null, market: "next_pass", seconds: 10, chip: 5, message: null, offset: 0, slips: {}, pending: null };
+const game = { state: null, market: "next_pass", seconds: 10, chip: 5, message: null, offset: 0, slips: {}, pending: null, odds: null };
 const money = (v) => `${v < 0 ? "-" : ""}£${Math.abs(Number(v)).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const short = (v) => (v >= 1000 ? `£${Math.round(v / 100) / 10}k` : `£${v}`);
 const seconds = (v) => (v >= 60 ? `${v / 60} min` : `${v}s`);
@@ -501,6 +501,18 @@ function slipReturn(r, st, selections) {
   return best;
 }
 
+/* ---------- live odds: move with the ball (demo, services/liveodds.py) ---------- */
+
+// Decimal odds for the selection from where the ball is now, or null when the market has none. Display only:
+// a win still pays from the pot. An outside bet: one over the summed chances of its zones.
+function liveOdds(st, sel) {
+  const row = game.odds?.[game.market];
+  if (!row) return null;
+  if (sel.kind === "zone") return row[sel.zone - 1];
+  return Math.max(1.01, 1 / st.groups[sel.kind].reduce((a, z) => a + 1 / row[z - 1], 0));
+}
+const oddsText = (v) => v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2);
+
 /* ---------- the round ---------- */
 
 const serverNow = () => Date.now() / 1000 + game.offset;
@@ -526,7 +538,8 @@ function renderGame() {
   const open = bettingOpen(step);
 
   $("market-question").textContent = `Where on the pitch will the ${market.label.toLowerCase()} happen?`;
-  $("rule-note").textContent = `${market.definition} ${market.voidAfter
+  const moving = !!game.odds?.[game.market];
+  $("rule-note").textContent = `${market.definition} ${moving ? "The odds move with the ball; a win pays from the pot. " : ""}${market.voidAfter
     ? `Void if none comes within ${market.voidAfter >= 120 ? `${market.voidAfter / 60} min` : `${market.voidAfter}s`}.`
     : "It runs until the next one."}`;
   [...$("market-picker").children].forEach((b) => {
@@ -550,20 +563,35 @@ function renderGame() {
   const inRound = {};
   for (const b of r?.mine || []) inRound[keyOf(b)] = (inRound[keyOf(b)] || 0) + b.amount;
   const live = r && !step?.done ? r : null;
-  // What £1 more there returns now, from the pot; nothing to show while the pot is empty.
-  const price = (sel) => { const v = paysNow(live, st, sel); return v == null ? "–" : v.toFixed(2); };
+  // With live odds: the odds from where the ball is now. Without: what £1 more there returns now, from the pot,
+  // and nothing to show while the pot is empty.
+  const price = (sel) => {
+    const odds = liveOdds(st, sel);
+    if (odds != null) return oddsText(odds);
+    const v = paysNow(live, st, sel);
+    return v == null ? "–" : v.toFixed(2);
+  };
 
   document.querySelectorAll("#board .cell").forEach((g) => {
     const n = Number(g.dataset.cell);
     const sel = { kind: "zone", zone: n };
     const total = r?.byZone?.[n] || 0, picked = s.get(keyOf(sel))?.amount || 0, mine = inRound[keyOf(sel)] || 0;
-    g.querySelector(".price text").textContent = price(sel);
-    // An empty pot has no price to show: the pill stays hidden until someone bets.
-    g.classList.toggle("no-price", !live?.pot);
+    const shown = price(sel), [beforeMarket, before] = (g.dataset.odds || "|").split("|");
+    g.querySelector(".price text").textContent = shown;
+    g.dataset.odds = moving ? `${game.market}|${shown}` : "";
+    // A live price that moves with the ball flashes: green when it shortens (more likely), red when it drifts.
+    // Only against the same market's last live price, so a market switch or the first odds do not flash.
+    if (moving && beforeMarket === game.market && before !== shown) {
+      g.classList.remove("shorter", "longer");
+      void g.getBoundingClientRect(); // restart the flash animation
+      g.classList.add(Number(shown) < Number(before) ? "shorter" : "longer");
+    }
+    // An empty pot has no price to show: the pill stays hidden until someone bets, unless live odds show.
+    g.classList.toggle("no-price", !moving && !live?.pot);
     g.classList.toggle("has-money", total > 0);
     g.classList.toggle("picked", picked > 0 || mine > 0);
     g.classList.toggle("win", winning.has(n));
-    g.setAttribute("aria-label", `Zone ${n}, pays ${price(sel)}${total ? `, ${money(total)} in the pot` : ""}${picked ? `, ${money(picked)} on your betslip` : ""}${mine ? `, ${money(mine)} placed` : ""}`);
+    g.setAttribute("aria-label", `Zone ${n}, ${moving ? "odds" : "pays"} ${shown}${total ? `, ${money(total)} in the pot` : ""}${picked ? `, ${money(picked)} on your betslip` : ""}${mine ? `, ${money(mine)} placed` : ""}`);
     const chipValue = picked + mine;
     const { x, y } = cellCentre(n);
     g.querySelector(".stake").replaceChildren(...(chipValue ? [stakeChip(x, y + ROW_H / 2 - 1.6, chipValue)] : []));
@@ -572,7 +600,7 @@ function renderGame() {
     const kind = b.dataset.kind, sel = { kind };
     const total = r?.byOutside?.[kind] || 0, picked = s.get(kind)?.amount || 0, mine = inRound[kind] || 0;
     const parts = [];
-    if ($("odds-toggle").checked && live?.pot) parts.push(price(sel));
+    if ($("odds-toggle").checked && (moving || live?.pot)) parts.push(price(sel));
     if (picked || mine) parts.push(money(picked + mine));
     else if (total) parts.push(`${money(total)} in`);
     b.querySelector("small").textContent = parts.join(" · ");
@@ -788,6 +816,7 @@ function connect() {
       return;
     }
     if (data.type === "ball") { renderBall(data, "Ball tracking"); return; }
+    if (data.type === "odds") { game.odds = data.markets; renderGame(); return; }
     if (data.type === "track") { onTrack(data); return; }
     if (data.type === "demo") { renderDemoBar(data); return; }
     if (data.type === "snapshot") applySnapshot(data.data);
