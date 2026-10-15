@@ -77,7 +77,7 @@ Match metadata: `fixtureId`, `competitionId`, `tournamentId`, `startTime`, `team
 2. **typeId 43 = deleted event.** The event keeps its `id` but its `typeId` changes to 43.
 3. **Qualifier 492 = Goal Confirmed.** Arrives as a re-push of the original Goal event (typeId 16) after VAR review.
 4. **Qualifier 495 = Possible VAR.** Arrives against Start Delay event (typeId 27).
-5. **Coordinates** -- `x`, `y` are percentage pitch coordinates (0-100). Qualifiers 140/141 give end coordinates, 212/213 give goalmouth coordinates.
+5. **Coordinates** -- `x`, `y` are percentage pitch coordinates (0-100). Qualifiers 140/141 give end coordinates, 102/103 give goalmouth coordinates (212/213 are pass length and angle).
 
 ## 6. Project structure
 

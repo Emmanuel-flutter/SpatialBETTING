@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Football · Sky Bet</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230f33d5'/%3E%3Crect x='3' y='4' width='10' height='8' rx='1' fill='none' stroke='white' stroke-width='1.4'/%3E%3Cpath d='M8 4v8' stroke='white' stroke-width='1.4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="lobby-page">
+  <div class="top-strip">
+    <span class="conn" id="conn" data-state="connecting" role="status">
+      <span class="conn-dot" aria-hidden="true"></span><span id="conn-label">Loading games</span>
+    </span>
+    <span class="top-strip-right">
+      <span class="age-badge" aria-label="Over 18s only">18+</span>
+      <span>Safer Gambling</span>
+    </span>
+  </div>
+
+  <header class="sb-header">
+    <a class="wordmark" href="/" aria-label="Sky Bet home"><span class="wm-sky">sky</span><span class="wm-bet">bet</span></a>
+    <nav class="header-nav" aria-label="Sections">
+      <a href="/" class="is-current">Football</a>
+    </nav>
+    <span class="play-badge">Play money</span>
+  </header>
+
+  <main class="lobby">
+    <section class="lobby-hero">
+      <h1>Football</h1>
+      <p>Pick a match to see its markets: Roulette, Who Where When, Bet Builder and P2P.</p>
+    </section>
+
+    <div class="mode-toggle" role="tablist" aria-label="Matches">
+      <button role="tab" id="tab-live" aria-selected="true" aria-controls="panel-live">Live</button>
+      <button role="tab" id="tab-demo" aria-selected="false" aria-controls="panel-demo">Demo</button>
+    </div>
+
+    <section class="lobby-section" id="panel-live" role="tabpanel" aria-labelledby="tab-live">
+      <header class="lobby-head"><h2>Live and upcoming</h2><span class="lobby-count" id="match-count"></span></header>
+      <ol class="event-groups" id="match-list"></ol>
+      <p class="lobby-empty" id="match-empty" hidden>No match is live or about to start. A match appears here 30 to 70 minutes before kick-off, when the feed first sends it. Switch to Demo to try the markets now.</p>
+    </section>
+
+    <section class="lobby-section" id="panel-demo" role="tabpanel" aria-labelledby="tab-demo" hidden>
+      <header class="lobby-head"><h2>Demo match</h2></header>
+      <ol class="event-groups">
+        <li class="event-group">
+          <h3 class="event-day">Bundesliga 2022/23 · Matchday 34 · recorded</h3>
+          <ol class="event-list">
+            <li><a class="event-row is-demo" href="/match?fixture=demo-j03wmx">
+              <div class="event-when"><span class="event-pill is-demo">DEMO</span></div>
+              <div class="event-teams">
+                <div class="event-team"><span class="event-name">1. FC Köln</span></div>
+                <div class="event-team"><span class="event-name">FC Bayern München</span></div>
+              </div>
+              <span class="event-chevron" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </a></li>
+          </ol>
+        </li>
+      </ol>
+      <p class="lobby-note lobby-demo-note">A recorded match played as if live, from kick-off. Demo odds are built from this match's own data and are for the demo only.</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>Match data: Opta</span>
+    <span>18+ · Please gamble responsibly. Internal prototype, play money only.</span>
+  </footer>
+
+  <script src="/static/lobby.js" defer></script>
+</body>
+</html>

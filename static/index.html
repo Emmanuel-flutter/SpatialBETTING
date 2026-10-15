@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Football · Sky Bet</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230f33d5'/%3E%3Crect x='3' y='4' width='10' height='8' rx='1' fill='none' stroke='white' stroke-width='1.4'/%3E%3Cpath d='M8 4v8' stroke='white' stroke-width='1.4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="top-strip">
+    <span class="conn" id="conn" data-state="connecting" role="status">
+      <span class="conn-dot" aria-hidden="true"></span><span id="conn-label">Connecting</span>
+    </span>
+    <span class="top-strip-right">
+      <span class="age-badge" aria-label="Over 18s only">18+</span>
+      <span>Safer Gambling</span>
+    </span>
+  </div>
+
+  <header class="sb-header">
+    <a class="wordmark" href="/" aria-label="Sky Bet home"><span class="wm-sky">sky</span><span class="wm-bet">bet</span></a>
+    <nav class="header-nav" aria-label="Sections">
+      <a href="/" class="is-current">Football</a>
+    </nav>
+    <div class="wallet" aria-live="polite">
+      <span class="wallet-label">Play balance</span>
+      <span class="wallet-amount" id="wallet">–</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="rail rail-left">
+      <section class="panel" aria-labelledby="stats-title">
+        <h2 class="panel-title" id="stats-title">Match stats</h2>
+        <table class="stat-table">
+          <thead><tr><th scope="col" id="stat-home">Home</th><th scope="col"><span class="sr-only">Stat</span></th><th scope="col" id="stat-away">Away</th></tr></thead>
+          <tbody id="stat-body"></tbody>
+        </table>
+        <p class="kickoff" id="kickoff"></p>
+      </section>
+      <section class="panel lineups" aria-labelledby="lineups-title">
+        <h2 class="panel-title" id="lineups-title">Line-ups</h2>
+        <div class="lineup" id="lineup-home"></div>
+        <div class="lineup" id="lineup-away"></div>
+      </section>
+      <div class="rail-link">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2l6.5 2.5v5c0 4-2.8 7-6.5 8.5C6.3 16.5 3.5 13.5 3.5 9.5v-5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7 10l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Gamble safely. Set your limit in under a minute.</span>
+      </div>
+    </aside>
+
+    <main class="centre">
+      <section class="event-hero" aria-labelledby="hero-title">
+        <div class="hero-bar">
+          <p class="crumbs"><a href="/">Football</a><span class="demo-crumb" id="demo-crumb" hidden>Demo</span></p>
+          <span class="status-pill" id="status" data-phase="pre">Pre-match</span>
+        </div>
+        <h1 class="sr-only" id="hero-title">Live match</h1>
+        <div class="scoreboard">
+          <div class="side home">
+            <span class="kit" id="kit-home" aria-hidden="true"></span>
+            <span class="team-name" id="name-home">Home</span>
+          </div>
+          <div class="score" aria-live="polite">
+            <span class="score-boxes" id="score">– : –</span>
+            <span class="clock" id="clock"></span>
+          </div>
+          <div class="side away">
+            <span class="team-name" id="name-away">Away</span>
+            <span class="kit" id="kit-away" aria-hidden="true"></span>
+          </div>
+        </div>
+      </section>
+
+      <div class="demo-bar" id="demo-bar" hidden>
+        <span class="demo-bar-label">Demo</span>
+        <div class="demo-buttons" role="group" aria-label="Demo playback">
+          <button id="demo-restart" aria-label="Restart before kick-off"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3v4h4M3.6 7A5 5 0 1 1 4 10.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Pre-match</span></button>
+          <button data-skip="-300" aria-label="Back 5 minutes"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3L3 8l5 5M13 3L8 8l5 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>5m</span></button>
+          <button data-skip="-30" aria-label="Back 30 seconds"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>30s</span></button>
+          <button id="demo-play" aria-label="Pause"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3v10M11 3v10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+          <button data-skip="30" aria-label="Forward 30 seconds"><span>30s</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button data-skip="300" aria-label="Forward 5 minutes"><span>5m</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l5 5-5 5M8 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+        <div class="segmented demo-speed" id="demo-speed" role="group" aria-label="Speed">
+          <button data-speed="1" aria-pressed="true">1x</button><button data-speed="2" aria-pressed="false">2x</button><button data-speed="4" aria-pressed="false">4x</button><button data-speed="8" aria-pressed="false">8x</button>
+        </div>
+        <div class="demo-track" id="demo-track" role="slider" tabindex="0" aria-label="Demo position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="demo-fill"></span></div>
+        <span class="demo-time" id="demo-time">0:00</span>
+      </div>
+
+      <nav class="market-nav" role="tablist" aria-label="Markets">
+        <button role="tab" aria-selected="true" aria-controls="view-roulette" id="tab-roulette">Roulette</button>
+        <button role="tab" aria-selected="false" aria-controls="view-www" id="tab-www">Who Where When</button>
+        <button role="tab" aria-selected="false" aria-controls="view-timeline" id="tab-timeline">Timeline</button>
+      </nav>
+
+      <div class="room-bar" id="room-bar">
+        <span class="room-name"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="5.5" cy="6" r="2.2" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="11" cy="6.5" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.8 13c.5-2.3 2-3.4 3.7-3.4s3.2 1.1 3.7 3.4M9.3 12.6c.4-1.7 1.4-2.6 2.7-2.6s2.2.9 2.5 2.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span id="room-label">Public room</span></span>
+        <span class="room-help" id="room-help">Everyone watching this match plays in one pot.</span>
+        <span class="room-actions">
+          <button class="btn-secondary" id="room-create">Create private room</button>
+          <button class="btn-secondary" id="room-copy" hidden>Copy room link</button>
+          <a class="room-leave" id="room-leave" hidden>Back to the public room</a>
+        </span>
+      </div>
+
+      <section class="card setpiece" id="setpiece" aria-labelledby="sp-title" hidden>
+        <div class="sp-head">
+          <div>
+            <p class="sp-kicker" id="sp-kicker">Penalty</p>
+            <h2 id="sp-title">Penalty</h2>
+            <p class="question" id="sp-sub"></p>
+          </div>
+          <div class="sp-timer" id="sp-timer" aria-hidden="true">
+            <svg viewBox="0 0 36 36"><circle class="sp-ring-bg" cx="18" cy="18" r="15.9"/><circle class="sp-ring" id="sp-ring" cx="18" cy="18" r="15.9" pathLength="100"/></svg>
+            <span id="sp-secs">20</span>
+          </div>
+        </div>
+        <div class="goal-frame">
+          <svg class="goal" id="goal" viewBox="0 0 120 60" aria-label="Goal mouth divided into nine zones"></svg>
+          <div class="board-overlay" id="sp-overlay" hidden><span class="overlay-pill" id="sp-overlay-text"></span></div>
+        </div>
+        <div class="sp-outcomes" id="sp-outcomes" role="group" aria-label="Other outcomes"></div>
+        <div class="sp-stake" id="sp-stake" hidden>
+          <label class="stake-input"><span aria-hidden="true">£</span><input id="sp-amount" type="number" inputmode="numeric" min="1" step="1" value="10" aria-label="Stake per pick in pounds"></label>
+          <span class="sp-pot">Pot <strong id="sp-pot">£0.00</strong></span>
+          <span class="sp-pot">Players <strong id="sp-players">0</strong></span>
+          <span class="sp-pot">My picks <strong id="sp-mine">£0.00</strong></span>
+        </div>
+        <p class="round-status" id="sp-status" role="status"></p>
+        <div class="sp-foot">
+          <span class="play-badge" id="sp-badge">Free to play</span>
+          <span id="sp-note">No stake. Picks are not bets.</span>
+          <span class="sp-replay" id="sp-replay"></span>
+          <button class="btn-secondary sp-close" id="sp-close" hidden>Close</button>
+        </div>
+        <p class="sr-only" id="sp-live" aria-live="assertive"></p>
+      </section>
+
+      <section class="card roulette" id="view-roulette" role="tabpanel" aria-labelledby="tab-roulette">
+        <div class="card-head">
+          <div>
+            <h2>Roulette</h2>
+            <p class="question" id="market-question">Where on the pitch will it happen next?</p>
+          </div>
+          <span class="play-badge">Peer to peer</span>
+        </div>
+        <div class="market-tabs" id="market-picker" role="group" aria-label="Market"></div>
+        <p class="rule-note"><span id="rule-note"></span></p>
+
+        <!-- The pitch is the roulette table's number grid (12 columns x 3 rows), so the outside bets sit
+             round it as on a casino table: column bets at the end of each row, dozens and even-money below. -->
+        <div class="casino" id="outside-bets" role="group" aria-label="Roulette table">
+        <div class="casino-top">
+        <div class="board-frame">
+          <svg class="pitch board" id="board" viewBox="0 0 105 68" aria-label="Roulette table: 36 zones on the pitch, with live event positions">
+            <defs>
+              <pattern id="stripes-board" width="10.5" height="68" patternUnits="userSpaceOnUse">
+                <rect width="5.25" height="68" fill="var(--pitch-a)"/>
+                <rect x="5.25" width="5.25" height="68" fill="var(--pitch-b)"/>
+              </pattern>
+              <radialGradient id="pitch-light" cx="50%" cy="40%" r="75%">
+                <stop offset="0" stop-color="#fff" stop-opacity="0.10"/>
+                <stop offset="1" stop-color="#000" stop-opacity="0.22"/>
+              </radialGradient>
+            </defs>
+            <rect width="105" height="68" fill="url(#stripes-board)"/>
+            <rect width="105" height="68" fill="url(#pitch-light)"/>
+            <g class="lines">
+              <rect x="0.5" y="0.5" width="104" height="67"/>
+              <line x1="52.5" y1="0.5" x2="52.5" y2="67.5"/>
+              <circle cx="52.5" cy="34" r="9.15"/>
+              <rect x="0.5" y="13.84" width="16" height="40.32"/>
+              <rect x="0.5" y="24.84" width="5" height="18.32"/>
+              <rect x="88.5" y="13.84" width="16" height="40.32"/>
+              <rect x="99.5" y="24.84" width="5" height="18.32"/>
+              <path d="M16.5 26.69 A9.15 9.15 0 0 1 16.5 41.31"/>
+              <path d="M88.5 26.69 A9.15 9.15 0 0 0 88.5 41.31"/>
+            </g>
+            <g class="spots">
+              <circle cx="52.5" cy="34" r="0.5"/><circle cx="11" cy="34" r="0.5"/><circle cx="94" cy="34" r="0.5"/>
+            </g>
+            <g class="events" id="layer-lines"></g>
+            <g class="events" id="layer-dots"></g>
+            <g id="board-cells"></g>
+            <g class="events" id="layer-latest"></g>
+            <g class="ball-layer" id="layer-ball"></g>
+            <g id="board-marker"></g>
+          </svg>
+          <div class="board-overlay" id="board-overlay" hidden>
+            <span class="overlay-pill" id="overlay-text"></span>
+          </div>
+        </div>
+        <div class="casino-cols">
+          <button class="outside col" data-kind="row1"><span>2 to 1</span><em id="lbl-row1">Top channel</em><small></small></button>
+          <button class="outside col" data-kind="row2"><span>2 to 1</span><em>Centre</em><small></small></button>
+          <button class="outside col" data-kind="row3"><span>2 to 1</span><em id="lbl-row3">Bottom channel</em><small></small></button>
+        </div>
+        </div>
+        <div class="casino-strip dozens">
+          <button class="outside" data-kind="third1"><span>1st 12</span><em>1st third</em><small></small></button>
+          <button class="outside" data-kind="third2"><span>2nd 12</span><em>Middle third</em><small></small></button>
+          <button class="outside" data-kind="third3"><span>3rd 12</span><em>Last third</em><small></small></button>
+          <span class="casino-corner" aria-hidden="true"></span>
+        </div>
+        <div class="casino-strip evens">
+          <button class="outside" data-kind="low"><span>1 to 18</span><em id="lbl-low">Home half</em><small></small></button>
+          <button class="outside" data-kind="even"><span>Even</span><small></small></button>
+          <button class="outside diamond red" data-kind="red" aria-label="Red"><i aria-hidden="true"></i><small></small></button>
+          <button class="outside diamond black" data-kind="black" aria-label="Black"><i aria-hidden="true"></i><small></small></button>
+          <button class="outside" data-kind="odd"><span>Odd</span><small></small></button>
+          <button class="outside" data-kind="high"><span>19 to 36</span><em id="lbl-high">Away half</em><small></small></button>
+          <span class="casino-corner" aria-hidden="true"></span>
+        </div>
+        </div>
+        <div class="board-under">
+            <span class="ball-flag" id="ball-flag" data-live="true" hidden><span class="ball-flag-dot" aria-hidden="true"></span><span id="ball-flag-text">In play</span></span>
+        </div>
+
+        <div class="board-bar">
+          <p class="board-legend"><span id="dir-home">Home</span> attack to the right <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> <span id="dir-away">Away</span> attack to the left</p>
+          <label class="odds-toggle"><input type="checkbox" id="odds-toggle" checked> <span>Show odds</span></label>
+          <div class="event-filter" role="group" aria-label="Live events on the pitch">
+            <span class="control-label">Live events</span>
+            <div class="segmented">
+              <button aria-pressed="true" data-filter="all">All</button>
+              <button aria-pressed="false" data-filter="shots">Shots</button>
+              <button aria-pressed="false" data-filter="passes">Passes</button>
+              <button aria-pressed="false" data-filter="off">Off</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="controls">
+          <div class="control-group" role="group" aria-label="Stake per zone">
+            <span class="control-label">Stake</span>
+            <div class="chip-rack" id="chip-rack"></div>
+            <label class="stake-input"><span aria-hidden="true">£</span><input id="stake-input" type="number" inputmode="numeric" min="1" step="1" value="5" aria-label="Stake per zone in pounds"></label>
+          </div>
+          <div class="control-group" id="window-group" role="group" aria-label="Round length">
+            <span class="control-label">Betting window</span>
+            <div class="segmented" id="round-picker"></div>
+          </div>
+        </div>
+        <p class="data-credit" id="roulette-rules">Peer to peer: every stake goes into one pot, and the winners share it. A zone counts 36 times its stake, a third or a band 3 times, a colour, odd/even or a half 2 times. If nobody wins, every stake goes back.</p>
+      </section>
+
+      <section class="card pool-card" id="view-www" role="tabpanel" aria-labelledby="tab-www" hidden>
+        <div class="card-head">
+          <div><h2>Who Where When</h2><p class="question">First goal: who scores, from which zone, and when?</p></div>
+          <span class="play-badge">Pre-match pot</span>
+        </div>
+        <div class="pool-body" id="www-body">
+          <p class="round-status" id="www-phase" role="status"></p>
+          <div class="pool-step"><span class="pool-step-n">1</span><span id="www-scorer-label">Who scores the first goal</span></div>
+          <div class="vs-picker" id="www-scorer" role="group" aria-labelledby="www-scorer-label"></div>
+          <div class="pool-step"><span class="pool-step-n">2</span><span id="www-grid-label">Where: pick the zone he scores from</span></div>
+          <div class="zone-grid" id="www-grid" role="group" aria-labelledby="www-grid-label"></div>
+          <p class="board-legend"><span id="www-dir-home">Home</span> attack to the right <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> <span id="www-dir-away">Away</span> attack to the left. Each zone shows the money on it.</p>
+          <div class="pool-step"><span class="pool-step-n">3</span><span id="www-bands-label">When: pick the minute band</span></div>
+          <div class="segmented band-picker" id="www-bands" role="group" aria-labelledby="www-bands-label"></div>
+          <div class="pool-join">
+            <label class="stake-input"><span aria-hidden="true">£</span><input id="www-stake" type="number" inputmode="numeric" min="1" step="1" value="10" aria-label="Stake in pounds"></label>
+            <button class="btn-primary" id="www-join">Join the pot</button>
+          </div>
+          <div class="www-quote" id="www-quote" aria-live="polite">
+            <div><span class="www-quote-label">Pot</span><strong id="www-pot">£0.00</strong></div>
+            <div><span class="www-quote-label">Players</span><strong id="www-players">0</strong></div>
+            <div><span class="www-quote-label">Your stake</span><strong id="www-mine">£0.00</strong></div>
+            <div><span class="www-quote-label">If your pick is exact</span><strong id="www-share">–</strong></div>
+            <span class="www-legs" id="www-pick">Pick a scorer, a zone and a band.</span>
+          </div>
+          <p class="round-status" id="www-status" role="status" hidden></p>
+          <div class="pool-live" id="www-live"></div>
+          <p class="pool-rules" id="www-rules">First goal decides the pot. Wrong scorer pays nothing; the exact zone and band pay most, a neighbouring one less. No goal, or no winner, returns every stake.</p>
+          <h3 class="history-title">Settled pots</h3>
+          <ol class="history" id="www-history"></ol>
+        </div>
+      </section>
+
+      <section class="card" id="view-timeline" role="tabpanel" aria-labelledby="tab-timeline" hidden>
+        <div class="card-head"><h2>Timeline</h2></div>
+        <ol class="timeline" id="timeline"></ol>
+        <p class="empty" id="timeline-empty">No key events yet.</p>
+      </section>
+
+      <p class="latest" id="latest" aria-live="polite">Waiting for kick-off.</p>
+    </main>
+
+    <aside class="rail rail-right">
+      <section class="betslip" aria-labelledby="slip-title">
+        <header class="slip-head">
+          <h2 id="slip-title">Betslip</h2>
+          <span class="slip-count" id="slip-count" hidden>0</span>
+        </header>
+        <div class="slip-empty" id="slip-empty">
+          <strong>Your betslip is empty.</strong>
+          <span>Tap a zone on the pitch to add a selection.</span>
+        </div>
+        <ol class="slip-rows" id="slip-rows"></ol>
+        <div class="slip-foot">
+          <div class="slip-line"><span>Total stake</span><strong id="slip-stake">£0.00</strong></div>
+          <div class="slip-line"><span>Potential returns</span><strong id="slip-return">£0.00</strong></div>
+          <div class="slip-line slip-pot" id="slip-pot-line" hidden><span>Round pot · <span id="slip-players">0</span> players · <span id="slip-viewers">0</span> in the room</span><strong id="slip-pot">£0.00</strong></div>
+          <div class="slip-line slip-pot" id="slip-mine-line" hidden><span>Your stake in this round</span><strong id="slip-mine">£0.00</strong></div>
+          <div class="round-meter" id="round-meter" hidden><span id="round-meter-fill"></span></div>
+          <p class="round-status" id="round-status" role="status">Pick a chip, tap zones, then place your bet.</p>
+          <div class="slip-actions">
+            <button class="btn-secondary" id="btn-clear">Clear</button>
+            <button class="btn-primary" id="btn-spin">Place bet</button>
+          </div>
+        </div>
+      </section>
+      <section class="panel settled" aria-labelledby="history-title">
+        <h2 class="panel-title" id="history-title">Settled rounds</h2>
+        <ol class="history" id="history"></ol>
+        <p class="empty" id="history-empty">No settled rounds yet.</p>
+      </section>
+    </aside>
+  </div>
+
+  <div class="mobile-slip" id="mobile-slip" hidden>
+    <span class="mobile-slip-text"><strong id="mobile-count">0 selections</strong> · <span id="mobile-stake">£0.00</span></span>
+    <button class="btn-primary" id="btn-spin-mobile">Place bet</button>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <div class="goal-takeover" id="goal-takeover" role="alert" hidden>
+    <div class="gt-inner">
+      <span class="gt-team"><span class="kit" id="gt-kit" aria-hidden="true"></span><span id="gt-team"></span></span>
+      <span class="gt-word">GOAL</span>
+      <span class="gt-sub" id="gt-sub"></span>
+      <span class="gt-bar" aria-hidden="true"></span>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <span id="data-source">Match data: Opta</span>
+    <span>18+ · Please gamble responsibly. Internal prototype, play money only.</span>
+  </footer>
+
+  <template id="icon-goal"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.5l3 2.2-1.1 3.5H6.1L5 6.7z" fill="currentColor"/></svg></template>
+  <template id="icon-card"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="2" width="8" height="12" rx="1.5" fill="currentColor"/></svg></template>
+  <template id="icon-sub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 2v9M2 8l3 3 3-3M11 14V5M8 8l3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></template>
+  <template id="icon-shot"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.5" fill="currentColor"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></template>
+  <template id="icon-whistle"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 7a4 4 0 1 0 8 0h4V4H6.5A4 4 0 0 0 2 7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></template>
+
+  <script src="/static/app.js" defer></script>
+  <script src="/static/moments.js" defer></script>
+  <script src="/static/www.js" defer></script>
+</body>
+</html>
