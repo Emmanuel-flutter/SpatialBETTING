@@ -304,7 +304,9 @@ const OUTSIDE_LABEL = {
   third1: "Zones 1-12", third2: "Zones 13-24", third3: "Zones 25-36", row1: "Top channel", row2: "Centre", row3: "Bottom channel",
 };
 // The betslip is per market, in the browser only: nothing is staked until Place bet.
-const game = { state: null, market: "next_pass", seconds: 10, chip: 5, message: null, offset: 0, slips: {}, pending: null, odds: null };
+const game = { state: null, market: "next_pass", seconds: 10, chip: 5, message: null, offset: 0, slips: {}, pending: null, odds: null, outside: null, system: "odds" };
+// The betting system is a per-viewer choice: fixed odds against the house, or a P2P pot against the room.
+try { if (localStorage.getItem("sb-system") === "p2p") game.system = "p2p"; } catch { /* storage blocked: use the default */ }
 const money = (v) => `${v < 0 ? "-" : ""}£${Math.abs(Number(v)).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const short = (v) => (v >= 1000 ? `£${Math.round(v / 100) / 10}k` : `£${v}`);
 const seconds = (v) => (v >= 60 ? `${v / 60} min` : `${v}s`);
@@ -372,7 +374,12 @@ function placeSlip() {
   if (!st || !s.size || game.pending) return;
   const ref = Math.random().toString(36).slice(2, 10);
   const selections = [...s.values()].map((x) => (x.kind === "zone" ? { kind: "zone", zone: x.zone, amount: x.amount } : { kind: x.kind, amount: x.amount }));
-  if (sendGame({ type: "br_place", ref, market: game.market, seconds: game.seconds, selections })) {
+  if (game.system === "odds") {
+    // The price on screen now is the price the bet asks for; the server takes it if it showed it.
+    for (const x of selections) x.odds = liveOdds(st, x);
+    if (selections.some((x) => x.odds == null)) { flash("there are no odds on this market right now"); return; }
+  }
+  if (sendGame({ type: "br_place", ref, system: game.system, market: game.market, seconds: game.seconds, selections })) {
     game.pending = { ref, market: game.market };
     renderGame();
   }
@@ -503,15 +510,37 @@ function slipReturn(r, st, selections) {
 
 /* ---------- live odds: move with the ball (demo, services/liveodds.py) ---------- */
 
-// Decimal odds for the selection from where the ball is now, or null when the market has none. Display only:
-// a win still pays from the pot. An outside bet: one over the summed chances of its zones.
+// Decimal odds for the selection from where the ball is now, as the server priced it, or null when the market
+// has none. An odds bet locks this price when it is placed.
 function liveOdds(st, sel) {
   const row = game.odds?.[game.market];
   if (!row) return null;
-  if (sel.kind === "zone") return row[sel.zone - 1];
-  return Math.max(1.01, 1 / st.groups[sel.kind].reduce((a, z) => a + 1 / row[z - 1], 0));
+  return sel.kind === "zone" ? row[sel.zone - 1] : game.outside?.[game.market]?.[sel.kind] ?? null;
 }
-const oddsText = (v) => v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2);
+const oddsText = (v) => v.toFixed(v >= 10 ? 1 : 2);
+// The best an odds slip can return: over every zone, what its winning selections pay at their prices.
+function oddsReturn(st, selections) {
+  let best = 0;
+  for (const z of ZONES) {
+    const pays = selections.filter((x) => (x.kind === "zone" ? x.zone === z : st.groups[x.kind].includes(z)))
+      .reduce((a, x) => a + x.amount * (x.odds ?? liveOdds(st, x) ?? 0), 0);
+    best = Math.max(best, pays);
+  }
+  return best;
+}
+// Why the market shows no fixed odds: it has none, the ball is dead, the feed is quiet, or no play has come yet.
+function noOddsText(st, name) {
+  if (!(st.oddsMarkets || []).includes(game.market)) return `There are no fixed odds on the ${name}. Switch to P2P pot to bet on it.`;
+  if (game.oddsReason === "dead") return `Odds on the ${name} are suspended while the ball is dead. They return when play restarts.`;
+  if (game.oddsReason === "stale") return `Odds on the ${name} are suspended: the feed has sent no play for a while.`;
+  return `Odds on the ${name} show when the next play comes in.`;
+}
+// The player's odds tickets on the market: waiting, and the newest result while it shows.
+function marketTickets(st) {
+  const mine = (st.tickets || []).filter((t) => t.market === game.market);
+  const done = mine.filter((t) => t.result).sort((a, b) => b.doneAt - a.doneAt)[0] || null;
+  return { waiting: mine.filter((t) => t.status === "locked"), done };
+}
 
 /* ---------- the round ---------- */
 
@@ -533,19 +562,36 @@ function renderGame() {
   buildPickers(st);
   $("wallet").textContent = money(st.balance);
   const market = st.markets[game.market];
-  const r = st.rounds[game.market] || null;
+  // With no live odds on this match the roulette is P2P only.
+  const oddsOn = (st.oddsMarkets || []).length > 0;
+  if (!oddsOn) game.system = "p2p";
+  $("system-row").hidden = !oddsOn;
+  const oddsMode = game.system === "odds";
+  // Odds mode leaves the room's P2P round alone: the board shows the player's own tickets instead.
+  const r = oddsMode ? null : st.rounds[game.market] || null;
   const step = roundStep(r, st);
-  const open = bettingOpen(step);
+  const moving = oddsMode && !!game.odds?.[game.market];
+  const tickets = marketTickets(st);
+  const open = oddsMode ? moving : bettingOpen(step);
 
+  [...$("system-picker").children].forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.system === game.system)));
+  $("play-badge").textContent = oddsMode ? "Fixed odds" : "Peer to peer";
+  $("roulette-rules").textContent = oddsMode
+    ? "Fixed odds: you bet against the house at the price shown, and it locks when you place the bet. Each winning selection pays its stake times its odds. A losing bet loses its stake. If no event comes in time, the stake goes back."
+    : "Peer to peer: every stake goes into one pot, and the winners share it. A zone counts 36 times its stake, a third or a band 3 times, a colour, odd/even or a half 2 times. If nobody wins, every stake goes back.";
+  $("window-group").hidden = oddsMode;
   $("market-question").textContent = `Where on the pitch will the ${market.label.toLowerCase()} happen?`;
-  const moving = !!game.odds?.[game.market];
-  $("rule-note").textContent = `${market.definition} ${moving ? "The odds move with the ball; a win pays from the pot. " : ""}${market.voidAfter
+  const voidNote = market.voidAfter
     ? `Void if none comes within ${market.voidAfter >= 120 ? `${market.voidAfter / 60} min` : `${market.voidAfter}s`}.`
-    : "It runs until the next one."}`;
+    : "It runs until the next one.";
+  $("rule-note").textContent = !oddsMode ? `${market.definition} ${voidNote}`
+    : moving ? `${market.definition.replace("betting closes", "you place the bet")} The odds move with the ball and the team on it. ${voidNote}`
+    : noOddsText(st, market.label.toLowerCase());
   [...$("market-picker").children].forEach((b) => {
     b.setAttribute("aria-pressed", String(b.dataset.market === game.market));
     const live = st.rounds[b.dataset.market];
-    b.classList.toggle("has-round", !!live && !["settled", "void"].includes(live.status));
+    b.classList.toggle("has-round", oddsMode ? (st.tickets || []).some((t) => t.market === b.dataset.market && t.status === "locked")
+      : !!live && !["settled", "void"].includes(live.status));
   });
   // The window is set by whoever starts the round; joiners bet into it.
   $("window-group").classList.toggle("fixed", !!r);
@@ -557,17 +603,17 @@ function renderGame() {
   $("board").classList.toggle("locked", !open);
   $("board").classList.toggle("hide-odds", !$("odds-toggle").checked);
 
-  const last = step?.done && st.last[game.market]?.id === r.id ? st.last[game.market] : null;
+  const last = oddsMode ? tickets.done?.result || null : step?.done && st.last[game.market]?.id === r.id ? st.last[game.market] : null;
   const winning = new Set(last && last.status !== "void" ? last.zones : []);
   const s = slip();
   const inRound = {};
-  for (const b of r?.mine || []) inRound[keyOf(b)] = (inRound[keyOf(b)] || 0) + b.amount;
+  const mineNow = oddsMode ? tickets.waiting.flatMap((t) => t.bets) : r?.mine || [];
+  for (const b of mineNow) inRound[keyOf(b)] = (inRound[keyOf(b)] || 0) + b.amount;
   const live = r && !step?.done ? r : null;
-  // With live odds: the odds from where the ball is now. Without: what £1 more there returns now, from the pot,
-  // and nothing to show while the pot is empty.
+  // Odds: the price from where the ball is now. P2P: what £1 more there returns now, from the pot, and nothing
+  // to show while the pot is empty.
   const price = (sel) => {
-    const odds = liveOdds(st, sel);
-    if (odds != null) return oddsText(odds);
+    if (oddsMode) { const odds = liveOdds(st, sel); return odds == null ? "–" : oddsText(odds); }
     const v = paysNow(live, st, sel);
     return v == null ? "–" : v.toFixed(2);
   };
@@ -624,14 +670,16 @@ function renderGame() {
   // In a pot, a win pays from other players' stakes. With nobody else in, the best a slip can do is its own
   // stake back, so say that instead of showing the stake as a "return".
   const others = (live?.pot || 0) - (live?.mine || []).reduce((a, b) => a + b.amount, 0);
-  $("slip-return").textContent = !rows.length ? money(0) : others > 0 ? money(slipReturn(live, st, rows)) : "Your stake, until others join";
+  $("slip-return").textContent = !rows.length ? money(0) : oddsMode ? money(oddsReturn(st, rows))
+    : others > 0 ? money(slipReturn(live, st, rows)) : "Your stake, until others join";
   $("slip-pot-line").hidden = !r;
   $("slip-pot").textContent = money(r?.pot || 0);
   $("slip-players").textContent = String(r?.players || 0);
   $("slip-viewers").textContent = String(st.viewers || 0);
-  const placed = (r?.mine || []).reduce((a, b) => a + b.amount, 0);
+  const placed = mineNow.reduce((a, b) => a + b.amount, 0);
   $("slip-mine-line").hidden = !placed || !!step?.done;
   $("slip-mine").textContent = money(placed);
+  $("slip-mine-label").textContent = oddsMode ? "Waiting at locked odds" : "Your stake in this round";
   $("slip-count").textContent = String(rows.length);
   $("slip-count").hidden = !rows.length;
   $("slip-empty").hidden = rows.length > 0;
@@ -652,17 +700,19 @@ function renderGame() {
     remove.addEventListener("click", () => { s.delete(keyOf(b)); renderGame(); });
     const stake = el("span", { class: "slip-stake" });
     stake.append(el("span", { "aria-hidden": "true" }, "£"), input, remove);
-    li.append(sel, el("span", { class: "slip-price" }, price(b)), el("span", { class: "slip-market" }, `${market.label} · share of the pot`), stake);
+    li.append(sel, el("span", { class: "slip-price" }, price(b)), el("span", { class: "slip-market" }, `${market.label} · ${oddsMode ? "fixed odds, locked when placed" : "share of the pot"}`), stake);
     return li;
   }));
 
   const inPlay = state.summary?.status.phase === "live";
   const canPlace = rows.length > 0 && inPlay && open && !game.pending;
-  const label = !r ? `Place bet${staked ? ` ${money(staked)}` : ""}` : open ? `Join round${staked ? ` ${money(staked)}` : ""}` : "Round running";
+  const noOdds = (st.oddsMarkets || []).includes(game.market) ? "Odds suspended" : "No fixed odds";
+  const label = oddsMode ? (moving ? `Place bet${staked ? ` ${money(staked)}` : ""}` : noOdds)
+    : !r ? `Place bet${staked ? ` ${money(staked)}` : ""}` : open ? `Join round${staked ? ` ${money(staked)}` : ""}` : "Round running";
   $("btn-spin").disabled = !canPlace;
   $("btn-spin-mobile").disabled = !canPlace;
   $("btn-spin").textContent = game.pending ? "Placing…" : label;
-  $("btn-spin-mobile").textContent = game.pending ? "Placing…" : !r || open ? "Place bet" : "Round running";
+  $("btn-spin-mobile").textContent = game.pending ? "Placing…" : oddsMode ? (moving ? "Place bet" : noOdds) : !r || open ? "Place bet" : "Round running";
   $("btn-clear").disabled = !rows.length;
   $("mobile-count").textContent = `${rows.length} selection${rows.length === 1 ? "" : "s"}`;
   $("mobile-stake").textContent = money(staked);
@@ -675,8 +725,8 @@ function renderGame() {
     const li = el("li");
     const net = h.myReturn - h.myStake;
     const kind = h.status === "void" || !h.myStake ? "v" : h.myReturn > 0 && net >= 0 ? "w" : "l";
-    const what = el("span", {}, `${h.label} · ${h.zones.length ? `zone ${h.zones.join(" & ")}` : "void"} · pot ${money(h.pot)}`);
-    what.append(el("small", {}, h.reason || `${h.players} player${h.players === 1 ? "" : "s"}`));
+    const what = el("span", {}, `${h.label} · ${h.zones.length ? `zone ${h.zones.join(" & ")}` : "void"} · ${h.system === "odds" ? "fixed odds" : `pot ${money(h.pot)}`}`);
+    what.append(el("small", {}, h.reason || (h.system === "odds" ? `staked ${money(h.myStake)}` : `${h.players} player${h.players === 1 ? "" : "s"}`)));
     li.append(el("span", { class: `outcome ${kind}`, "aria-label": { v: "Void", w: "Won", l: "Lost" }[kind] }, kind.toUpperCase()), what,
       el("span", { class: net > 0 ? "net-win" : net < 0 ? "net-lose" : "" }, h.myStake ? `${net > 0 ? "+" : ""}${money(net)}` : "–"));
     return li;
@@ -692,12 +742,13 @@ function renderRoundStatus() {
   overlay.hidden = true;
   if (!st) return;
   const market = st.markets[game.market];
-  const r = st.rounds[game.market] || null;
+  const r = game.system === "odds" ? null : st.rounds[game.market] || null;
   const step = roundStep(r, st);
   meter.hidden = !step || step.done;
   meter.classList.toggle("locked", step?.step === "waiting");
   $("round-meter-fill").style.width = step?.step === "bet" ? `${Math.min(100, (step.left / (step.span || 1)) * 100)}%` : "100%";
   if (game.message) { box.classList.add("error"); box.textContent = `Sorry, ${game.message}.`; return; }
+  if (game.system === "odds") { renderTicketStatus(st, market, box, overlay); return; }
   const last = st.last[game.market];
   if (step?.done && last && last.id === r.id) {
     const where = `zone ${last.zones.join(" & ")}`;
@@ -726,6 +777,39 @@ function renderRoundStatus() {
   }
 }
 
+// Odds mode: the newest ticket result while it shows, else how many bets wait for the event.
+function renderTicketStatus(st, market, box, overlay) {
+  const { waiting, done } = marketTickets(st);
+  const res = done?.result;
+  const name = market.label.toLowerCase();
+  if (res) {
+    const where = `zone ${res.zones.join(" & ")}`;
+    const net = res.myReturn - res.myStake;
+    let text;
+    if (res.status === "void") text = `Bet void: ${res.reason}. Stake returned.`;
+    else {
+      box.classList.add(net > 0 ? "win" : "lose");
+      // A slip can win one selection and still return less than its total stake.
+      text = net > 0 ? `You won ${money(net)} at fixed odds (returned ${money(res.myReturn)}). The ${name} was in ${where}.`
+        : res.myReturn > 0 ? `Part of your slip won: returned ${money(res.myReturn)} (${money(net)}). The ${name} was in ${where}.`
+        : `No win. The ${name} was in ${where}.`;
+    }
+    box.textContent = text;
+    overlay.hidden = false;
+    $("overlay-text").textContent = text;
+  } else if (waiting.length) {
+    box.textContent = `${waiting.length} bet${waiting.length === 1 ? "" : "s"} at locked odds. Waiting for the ${name}.`;
+  } else {
+    box.textContent = state.summary?.status.phase !== "live" ? "Bets open when the match is in play."
+      : game.odds?.[game.market] ? "Pick a chip, tap zones, then place your bet at the odds shown." : noOddsText(st, name);
+  }
+}
+
+document.querySelectorAll("#system-picker button").forEach((b) => b.addEventListener("click", () => {
+  game.system = b.dataset.system;
+  try { localStorage.setItem("sb-system", game.system); } catch { /* storage blocked: the choice is not remembered */ }
+  renderGame();
+}));
 $("btn-clear").addEventListener("click", () => { slip().clear(); renderGame(); });
 $("btn-spin").addEventListener("click", placeSlip);
 $("btn-spin-mobile").addEventListener("click", placeSlip);
@@ -816,7 +900,7 @@ function connect() {
       return;
     }
     if (data.type === "ball") { renderBall(data, "Ball tracking"); return; }
-    if (data.type === "odds") { game.odds = data.markets; renderGame(); return; }
+    if (data.type === "odds") { game.odds = data.markets; game.outside = data.outside; game.oddsReason = data.reason || null; renderGame(); return; }
     if (data.type === "track") { onTrack(data); return; }
     if (data.type === "demo") { renderDemoBar(data); return; }
     if (data.type === "snapshot") applySnapshot(data.data);

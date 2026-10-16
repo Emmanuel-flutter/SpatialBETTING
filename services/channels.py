@@ -3,12 +3,13 @@ import logging
 import re
 import time
 
+from config import LIVE_ODDS_TABLE
 from services.p2proulette import P2PRoulette
 from services.balltrack import BallTrack
 from services.demo import DemoFeed
 from services.feed import FixtureFeed
 from services.hub import Hub
-from services.liveodds import LiveOdds
+from services.liveodds import MARKETS as ODDS_MARKETS, LiveOdds
 from services.match_state import MatchState
 from services.penalty import PenaltyPot
 from services.wallet import Wallets
@@ -33,7 +34,9 @@ class Room:
     def __init__(self, room_id: str, channel: "Channel", loop: asyncio.AbstractEventLoop, wallets: Wallets):
         self.id = room_id
         self.roulette = P2PRoulette(schedule=loop.call_later, wallets=wallets, can_run=channel.ball_in_play_time,
-                                    match_time=channel.match_seconds, source=channel.track.source, room=room_id)
+                                    match_time=channel.match_seconds, source=channel.track.source, room=room_id,
+                                    quotes=lambda: channel.odds.quotes() if channel.odds else [],
+                                    odds_markets=ODDS_MARKETS if channel.odds else ())
         self.www = WhoWhereWhen(schedule=loop.call_later, wallets=wallets, phase=channel.game_phase,
                                 squads=channel.squads)
         self.penalty = PenaltyPot(schedule=loop.call_later, wallets=wallets, track=channel.track,
@@ -66,8 +69,15 @@ class Channel:
         self.is_demo = demo is not None
         # The demo has a real ball track; a live match has only Opta events, so the path is estimated.
         self.track = BallTrack("tracking" if demo and demo.get("ball") else "events")
-        # Odds that move with the ball: demo only, since they need the real ball track and who has the ball.
-        self.odds = LiveOdds(demo["odds"]) if demo and demo.get("ball") and demo.get("odds") else None
+        # Odds that move with the ball. The demo prices from its ball track (_on_ball); a live match from its
+        # newest on-ball Opta event (_on_events).
+        odds_table = demo.get("odds") if demo else LIVE_ODDS_TABLE
+        self.odds = LiveOdds(odds_table, live=self.track.source == "events") if odds_table else None
+        self._ticking = False
+        if self.odds and self.track.source == "events":
+            # Live: the price ages with the newest event, so re-price each second.
+            self._ticking = True
+            loop.call_later(1.0, self._odds_tick)
         self._loop, self._wallets = loop, wallets
         self.rooms: dict[str, Room] = {}
         self.viewers = 0
@@ -132,7 +142,16 @@ class Channel:
     def active(self) -> bool:
         return any(r.active() for r in self.rooms.values())
 
+    def _odds_tick(self) -> None:
+        if not self._ticking:
+            return
+        message = self.odds.tick()
+        if message:
+            self.hub.publish(message)
+        self._loop.call_later(1.0, self._odds_tick)
+
     def close_rooms(self) -> None:
+        self._ticking = False
         for room in self.rooms.values():
             room.close()
         self.rooms.clear()
@@ -148,8 +167,12 @@ class Channel:
     def _on_events(self, changed: list[dict], phase: str) -> None:
         if self.track.source == "events":
             self.track.add_events(changed)
-            # Live: clients draw the ball on the same estimated path the rounds settle on.
+            # Live: clients draw the ball on the estimated path from the positioned events.
             self.hub.publish(self.track_message())
+            if self.odds:
+                message = self.odds.update_from_events(changed)
+                if message:
+                    self.hub.publish(message)
         for room in self.rooms.values():
             room.roulette.on_events(changed)
             room.www.on_events(changed)

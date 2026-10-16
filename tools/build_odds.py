@@ -19,6 +19,9 @@ Next pass: every 5 Hz ball sample inside a half with a known possessor settles o
 position strictly after it, within 120 s, in the same half; otherwise it is void. Each sample weighs
 0.2 s. W[in][out], in = first cell of the ball, each row shrunk toward the marginal M with 60 s:
 P[in][out] = (W[in][out] + 60 M[out]) / (row[in] + 60).
+Next pass by age (live): the price is read from older information. For a lag L in LAGS, each sample at t settles
+on the first Play after t as above, but the ball cell and the possessor come from the sample at t - L; shrunk the
+same way. Lag 0 is the table above.
 Next shot: the same samples settle on the first ShotAtGoal with a position after them in the half (no cap).
 Who Where When: xG per 90 by DFL PlayingPosition code, and the shot-xG zone table per code (shooter's
 attack-right frame) shrunk toward the overall table with 1.0 xG.
@@ -39,6 +42,8 @@ from tools.build_pricing import odds_from
 STEP = 0.2  # seconds per 5 Hz sample
 PASS_VOID = 120.0
 PASS_ALPHA = 60.0  # seconds
+# Information ages for the live next-pass tables, seconds. A live Opta event reaches us a few seconds after the play.
+LAGS = (0, 2, 4, 6, 8, 10, 15)
 ZONE_ALPHA = 1.0  # xG
 MIN_MINUTES = 90.0
 MAX_MEDIAN_M = 6.0
@@ -118,6 +123,31 @@ def outcomes(track: dict, ev: dict):
             if j < len(shots):
                 sc, si = in_frame(shots[j][1], shots[j][2], shots[j][3]), (period, j)
             yield period, live, in_cell, pc, pi, sc, si
+
+
+def lagged(track: dict, ev: dict):
+    """Yield (lag, in_cell, next pass cells): the ball cell and possessor from the sample `lag` seconds before the
+    sample whose next pass settles it, all in the possessor frame of that earlier sample."""
+    home = track["homeId"]
+    for period in (1, 2):
+        passes, samples = ev["passes"][period], track["samples"][period]
+        p_times = [p[0] for p in passes]
+        for i, (t, *_rest) in enumerate(samples):
+            k = bisect.bisect_right(p_times, t)
+            if k >= len(passes) or passes[k][0] - t > PASS_VOID:
+                continue
+            team, ex, ey = passes[k][1], passes[k][2], passes[k][3]
+            for lag in LAGS:
+                j = i - round(lag / STEP)
+                if j < 0:
+                    break
+                _, x, y, _live, poss = samples[j]
+                if poss not in (1, 2):
+                    continue
+                possessor_home = poss == 1
+                bx, by = (x, y) if possessor_home else mirror_xy(x, y)
+                out = cells_at(ex, ey) if (team == home) == possessor_home else cells_at(*mirror_xy(ex, ey))
+                yield lag, min(cells_at(bx, by)), out
 
 
 def frame_checks(track: dict, ev: dict) -> tuple[float, float, float]:
@@ -200,6 +230,8 @@ def build(dfl_dir: Path, match: str, slug: str, root: Path) -> None:
     W = [[0.0] * (CELLS + 1) for _ in range(CELLS + 1)]
     row_secs = [0.0] * (CELLS + 1)  # sample seconds per ball cell (a line tie counts its sample once)
     S = [0.0] * (CELLS + 1)
+    WL = {lag: [[0.0] * (CELLS + 1) for _ in range(CELLS + 1)] for lag in LAGS}
+    rows_L = {lag: [0.0] * (CELLS + 1) for lag in LAGS}
     pass_seconds = shot_seconds = 0.0
     passes_used, shots_used = set(), set()
     zone_code = defaultdict(lambda: [0.0] * (CELLS + 1))
@@ -230,6 +262,10 @@ def build(dfl_dir: Path, match: str, slug: str, root: Path) -> None:
                     S[c] += STEP
                 shot_seconds += STEP
                 shots_used.add((m, si))
+        for lag, in_cell, out in lagged(track, ev):
+            for c in out:
+                WL[lag][in_cell][c] += STEP
+            rows_L[lag][in_cell] += STEP
         for p in (1, 2):
             stoppage[p].append(max(0.0, (track["ends"][p] - track["starts"][p]).total_seconds() - 45 * 60))
         code_at, minutes, *_ = players_and_minutes(dfl_dir, m, track, ev)
@@ -253,6 +289,8 @@ def build(dfl_dir: Path, match: str, slug: str, root: Path) -> None:
     S_p = [v / shot_seconds for v in S[1:]]
     odds_P = {i: [odds_from(p, MARGIN, MAX_ODDS) for p in P[i]] for i in P}
     odds_S = [odds_from(p, MARGIN, MAX_ODDS) for p in S_p]
+    odds_L = {lag: {i: [odds_from((WL[lag][i][c] + PASS_ALPHA * M[c]) / (rows_L[lag][i] + PASS_ALPHA), MARGIN, MAX_ODDS)
+                        for c in range(1, CELLS + 1)] for i in range(1, CELLS + 1)} for lag in LAGS}
 
     def table(ps: list[float]) -> list[dict]:
         return [{"cell": c + 1, "p": round(ps[c], 6), "odds": odds_from(ps[c], MARGIN, MAX_ODDS)} for c in range(CELLS)]
@@ -268,7 +306,10 @@ def build(dfl_dir: Path, match: str, slug: str, root: Path) -> None:
                 "label": "Next pass",
                 "definition": "Where the first pass after you place the bet is played from (open play and restarts).",
                 "voidAfterSec": int(PASS_VOID), "instant": True, "cells": table(M[1:]),
-                "conditional": {"frame": "possessor", "byBallCell": {str(i): odds_P[i] for i in range(1, CELLS + 1)}},
+                "conditional": {"frame": "possessor", "byBallCell": {str(i): odds_P[i] for i in range(1, CELLS + 1)},
+                                # Live: the price from information this many seconds old (see "Next pass by age").
+                                "byLag": {str(lag): {str(i): odds_L[lag][i] for i in range(1, CELLS + 1)}
+                                          for lag in LAGS}},
                 "samples": round(pass_seconds, 1), "events": len(passes_used),
             },
             "next_shot": {

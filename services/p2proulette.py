@@ -1,7 +1,10 @@
-"""Football Roulette as P2P pots on live Opta events. Play money only.
+"""Football Roulette on live Opta events, as P2P pots or at fixed odds. Play money only.
 
-Markets: where the next pass, shot or foul after betting closes happens. Players bet against each other into
-one pot per round. No price is set.
+Markets: where the next pass, shot or foul happens. Each betslip picks a system:
+- P2P: players bet against each other into one pot per round. No price is set.
+- Odds: the player bets against the house at the price shown (services/liveodds.py), locked when the slip is
+  placed. The slip is a ticket of its own: it settles on the first qualifying event after it was placed and pays
+  stake x locked odds on each winning selection. A market with no price takes no odds bets.
 
 A round starts when a player places a betslip with no round running on that market: the betting window is
 the one that player picked (ROUND_SECONDS). Everyone in the room sees the countdown and can add a slip until
@@ -10,7 +13,7 @@ it closes. One round per market at a time; the next slip after it ends starts th
 Bets: a zone 1-36, or an outside bet (GROUPS): red/black, odd/even, home half/away half (x2), a third of the
 pitch or a band along it (x3). Winners share the pot, less HOUSE_CUT, in proportion to stake x the roulette
 multiplier, so a single zone pays most. A point on a line wins every zone it touches, and an outside bet wins
-if any of those zones is in it. If nobody wins, every stake is returned.
+if any of those zones is in it. If nobody wins, every stake is returned. That rule is P2P only: an odds bet that loses, loses its stake.
 
 The first qualifying event after betting closes settles the round, at its x,y. Live events can come late and
 out of order, so the round waits EVENT_SETTLE_WAIT after the first candidate arrives and then takes the
@@ -50,6 +53,15 @@ GROUPS = {
 OUTSIDE = {k: 3 if k.startswith(("third", "row")) else 2 for k in GROUPS}
 MAX_SELECTIONS = 48
 HISTORY = 12
+SYSTEMS = ("p2p", "odds")
+# Open odds tickets per player: each waits for its own event, so this bounds the work and the state message.
+MAX_OPEN_TICKETS = 20
+# An odds bet is void when the ball went dead after the play its price was read from but before the bet, and the
+# feed sent that only after the bet: the price did not know the next pass would be a restart. Live only (a demo
+# price has no source time); the window bounds how far back a dead ball counts.
+LATE_DEAD_BALL_WINDOW = 20.0
+DEAD_BALL = frozenset({opta.FOUL, opta.OUT, opta.CORNER, opta.OFFSIDE_PASS, opta.OFFSIDE_PROVOKED, opta.MISS,
+                       opta.GOAL})
 
 
 def _in_play_positioned(event: dict) -> bool:
@@ -91,6 +103,7 @@ class Bet:
     kind: str  # "zone" or a key of OUTSIDE
     zone: int | None
     amount: int
+    odds: float | None = None  # the locked decimal price, odds system only
 
     @property
     def multiplier(self) -> int:
@@ -118,6 +131,11 @@ class Round:
     period_end_ts: float | None = None
     done_at: float | None = None  # settled or void: the result shows until done_at + RESULT_SECONDS
     bets: list[Bet] = field(default_factory=list)
+    system: str = "p2p"
+    owner: str | None = None  # odds system: the one player on the ticket
+    result: dict | None = None  # odds system: the history row, once settled or void
+    late_dead_ball: bool = False  # odds system: a dead ball from before the bet arrived after it
+    source_ts: float | None = None  # odds system: the time of the play the locked price was read from (live)
 
     @property
     def pot(self) -> int:
@@ -129,14 +147,19 @@ class P2PRoulette:
 
     def __init__(self, *, schedule: Callable[[float, Callable[[], None]], object], wallets: Wallets,
                  can_run: Callable[[], bool], match_time: Callable[[], float | None] = lambda: None,
-                 now: Callable[[], float] = time.time, source: str = "events", room: str = "public"):
+                 now: Callable[[], float] = time.time, source: str = "events", room: str = "public",
+                 quotes: Callable[[], list[dict]] = lambda: [], odds_markets: tuple[str, ...] = ()):
         self._schedule, self._wallets, self._can_run, self._now = schedule, wallets, can_run, now
+        self._quotes = quotes  # the prices shown lately, newest first (services/liveodds.py LiveOdds.quotes)
+        self._odds_markets = odds_markets  # the markets the odds system can price; none: P2P only
         self._match_time = match_time
         self._source = source  # "events" for live Opta, "tracking" for the demo
         self.room = room
         self._rounds: dict[str, Round] = {}
         self._last: dict[str, dict] = {}
         self._history: list[dict] = []
+        self._tickets: dict[str, Round] = {}  # odds system, by ticket id
+        self._ticket_history: dict[str, list[dict]] = {}  # odds system, per player
         self._listeners: dict[str, set[Callable[[dict], None]]] = {}
         self._stopped = False
 
@@ -159,10 +182,11 @@ class P2PRoulette:
         """Move every round on. Return True when players need a new state."""
         now, changed = self._now(), False
         running = self._can_run()
-        for name, r in list(self._rounds.items()):
+        for key, r, store in [*((k, r, self._rounds) for k, r in self._rounds.items()),
+                              *((k, r, self._tickets) for k, r in self._tickets.items())]:
             if r.status in ("settled", "void"):
                 if now >= r.done_at + RESULT_SECONDS:
-                    del self._rounds[name]
+                    del store[key]
                     changed = True
                 continue
             if not running and not (r.status == "locked" and r.candidates):
@@ -193,6 +217,9 @@ class P2PRoulette:
             r.deadline, r.deadline_real = r.locks_at + market.void_after, True
 
     def _check(self, r: Round, now: float) -> bool:
+        if r.late_dead_ball:
+            self._void(r, "the ball went dead just before the bet was placed")
+            return True
         if r.candidates and now >= r.first_candidate_at + EVENT_SETTLE_WAIT[self._source]:
             first = min(r.candidates.values(), key=lambda e: (e["ts"], e["id"]))
             if r.period_end_ts is not None and r.period_end_ts < first["ts"]:
@@ -229,7 +256,7 @@ class P2PRoulette:
 
     def on_events(self, events: list[dict]) -> None:
         """Collect qualifying events for the rounds whose betting has closed."""
-        if not self._rounds:
+        if not self._rounds and not self._tickets:
             return
         # Lock any round due to close first, so an event just after the close is not missed. Read the batch
         # before the phase check: the feed thread can show the half as over before its own events arrive here.
@@ -238,12 +265,16 @@ class P2PRoulette:
             if r.status == "open" and now >= r.locks_at:
                 self._lock(r, now)
         timed = [e for e in events if e.get("ts") is not None]
-        for name, r in self._rounds.items():
+        for r in [*self._rounds.values(), *self._tickets.values()]:
             if r.status != "locked":
                 continue
-            market = MARKETS[name]
+            market = MARKETS[r.market]
             for e in timed:
                 if e["ts"] <= r.locks_at:
+                    if (r.system == "odds" and e["typeId"] in DEAD_BALL and not e.get("deleted")
+                            and r.source_ts is not None and e["ts"] > r.source_ts
+                            and r.locks_at - e["ts"] <= LATE_DEAD_BALL_WINDOW):
+                        r.late_dead_ball = True
                     continue
                 if e.get("deleted"):
                     if r.candidates.pop(e["id"], None) is not None and not r.candidates:
@@ -301,6 +332,9 @@ class P2PRoulette:
             raise BetError("add a selection to the betslip first")
         if len(selections) > MAX_SELECTIONS:
             raise BetError(f"at most {MAX_SELECTIONS} selections in one betslip")
+        system = message.get("system", "p2p")
+        if system not in SYSTEMS:
+            raise BetError("pick P2P or odds")
         bets = [self._parse(player_id, s) for s in selections]
         total = sum(b.amount for b in bets)
         balance = self._wallets.balance(player_id)
@@ -308,8 +342,11 @@ class P2PRoulette:
             raise BetError("not enough balance")
         if not self._can_run():
             raise BetError("bets open when the match is in play")
-        r = self._rounds.get(name)
         now = self._now()
+        if system == "odds":
+            self._place_odds(player_id, name, bets, selections, now, balance - total)
+            return
+        r = self._rounds.get(name)
         if r is None:
             seconds = message.get("seconds")
             if type(seconds) is not int or seconds not in ROUND_SECONDS:
@@ -319,6 +356,38 @@ class P2PRoulette:
             raise BetError(f"a {MARKETS[name].label.lower()} round is running; wait for it to finish")
         self._wallets.set(player_id, balance - total)
         r.bets.extend(bets)
+
+    def _place_odds(self, player_id: str, name: str, bets: list[Bet], selections: list, now: float,
+                    balance_after: float) -> None:
+        """Lock each selection at the price the player saw, if the server showed it within the grace time."""
+        if sum(1 for t in self._tickets.values() if t.owner == player_id and t.status == "locked") >= MAX_OPEN_TICKETS:
+            raise BetError(f"at most {MAX_OPEN_TICKETS} odds bets can wait at once")
+        quotes = [q for q in self._quotes() if name in (q.get("zones") or {})]
+        if not quotes:
+            raise BetError(f"there are no odds on the {MARKETS[name].label.lower()} right now")
+        seen = [s.get("odds") for s in selections]
+        if any(type(v) not in (int, float) or isinstance(v, bool) for v in seen):
+            raise BetError("the betslip has no price; tap the zone again")
+
+        def prices(q: dict) -> list[float]:
+            return [q["zones"][name][b.zone - 1] if b.kind == "zone" else q["outside"][name][b.kind] for b in bets]
+
+        # The whole slip takes one price list: the current one, or the one just replaced.
+        match = next((q for q in quotes if prices(q) == seen), None)
+        if match is None:
+            i = next(i for i, (v, now_price) in enumerate(zip(seen, prices(quotes[0]))) if v != now_price)
+            raise BetError(f"the odds on {self._bet_name(bets[i])} moved to {prices(quotes[0])[i]}; check the new price")
+        for b, v in zip(bets, seen):
+            b.odds = float(v)
+        r = Round(uuid.uuid4().hex[:8], name, 0, now, now, system="odds", owner=player_id, bets=bets,
+                  source_ts=match.get("sourceTs"))
+        self._lock(r, now)
+        self._tickets[r.id] = r
+        self._wallets.set(player_id, balance_after)
+
+    @staticmethod
+    def _bet_name(b: Bet) -> str:
+        return f"zone {b.zone}" if b.kind == "zone" else b.kind
 
     @staticmethod
     def _parse(player_id: str, s) -> Bet:
@@ -343,7 +412,12 @@ class P2PRoulette:
     def _settle(self, r: Round, zones: set[int], event: dict) -> None:
         winners = [b for b in r.bets if b.wins(zones)]
         payouts: dict[str, float] = {}
-        if winners:
+        if r.system == "odds":
+            # Against the house: each winning selection pays stake x its locked odds; a loss keeps nothing back.
+            payouts[r.owner] = sum(b.amount * b.odds for b in winners)
+            r.status = "settled"
+            reason = None
+        elif winners:
             weight = sum(b.amount * b.multiplier for b in winners)
             share = r.pot * (1 - HOUSE_CUT)
             for b in winners:
@@ -378,20 +452,26 @@ class P2PRoulette:
             stakes[b.player] = stakes.get(b.player, 0) + b.amount
         row = {"id": r.id, "market": r.market, "label": MARKETS[r.market].label, "status": r.status, "pot": r.pot,
                "players": len(stakes), **outcome, "payouts": {p: round(v, 2) for p, v in payouts.items()},
-               "stakes": stakes}
+               "stakes": stakes, "system": r.system, "doneAt": r.done_at}
+        if r.system == "odds":
+            # A ticket is private: only its owner sees it in the history.
+            r.result = row
+            self._ticket_history[r.owner] = [row, *self._ticket_history.get(r.owner, [])][:HISTORY]
+            return
         self._last[r.market] = row
         self._history = [row, *self._history][:HISTORY]
 
     def void_all(self, reason: str) -> None:
         """Refund every round not yet paid, e.g. when a demo jumps in time."""
-        for r in self._rounds.values():
+        for r in [*self._rounds.values(), *self._tickets.values()]:
             if r.status in ("open", "locked"):
                 self._void(r, reason)
         self._rounds.clear()
+        self._tickets.clear()
         self._broadcast()
 
     def active(self) -> bool:
-        return any(r.status in ("open", "locked") for r in self._rounds.values())
+        return any(r.status in ("open", "locked") for r in [*self._rounds.values(), *self._tickets.values()])
 
     # ---- views ----
 
@@ -415,6 +495,12 @@ class P2PRoulette:
                 "players": len({b.player for b in r.bets}), "byZone": by_zone, "byOutside": by_outside,
                 "mine": [{"kind": b.kind, "zone": b.zone, "amount": b.amount} for b in r.bets if b.player == player_id]}
 
+    def _ticket_json(self, t: Round, player_id: str) -> dict:
+        result = self._personal(t.result, player_id)
+        return {"id": t.id, "market": t.market, "status": t.status, "placedAt": t.opens_at, "doneAt": t.done_at,
+                "bets": [{"kind": b.kind, "zone": b.zone, "amount": b.amount, "odds": b.odds} for b in t.bets],
+                "result": result}
+
     def _state(self, player_id: str) -> dict:
         return {"type": "br_state", "state": {
             "room": self.room,
@@ -422,7 +508,11 @@ class P2PRoulette:
                         for name, m in MARKETS.items()},
             "rounds": {name: self._round_json(r, player_id) for name, r in self._rounds.items()},
             "last": {name: self._personal(h, player_id) for name, h in self._last.items()},
-            "history": [self._personal(h, player_id) for h in self._history],
+            "history": [self._personal(h, player_id) for h in sorted(
+                [*self._history, *self._ticket_history.get(player_id, [])], key=lambda h: -h["doneAt"])[:HISTORY]],
+            # The player's own odds tickets: waiting, or showing a result for RESULT_SECONDS.
+            "tickets": [self._ticket_json(t, player_id) for t in self._tickets.values() if t.owner == player_id],
+            "systems": SYSTEMS, "oddsMarkets": list(self._odds_markets),
             "houseCut": HOUSE_CUT, "multipliers": {"zone": STRAIGHT, **OUTSIDE},
             "groups": {k: sorted(v) for k, v in GROUPS.items()},
             "roundSeconds": ROUND_SECONDS, "resultSeconds": RESULT_SECONDS, "chipValues": CHIPS,

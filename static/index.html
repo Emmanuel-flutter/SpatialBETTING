@@ -145,7 +145,14 @@
             <h2>Roulette</h2>
             <p class="question" id="market-question">Where on the pitch will it happen next?</p>
           </div>
-          <span class="play-badge">Peer to peer</span>
+          <span class="play-badge" id="play-badge">Peer to peer</span>
+        </div>
+        <div class="system-row" id="system-row">
+          <span class="control-label">System</span>
+          <div class="segmented" id="system-picker" role="group" aria-label="Betting system">
+            <button data-system="odds" aria-pressed="true">Fixed odds</button>
+            <button data-system="p2p" aria-pressed="false">P2P pot</button>
+          </div>
         </div>
         <div class="market-tabs" id="market-picker" role="group" aria-label="Market"></div>
         <p class="rule-note"><span id="rule-note"></span></p>
@@ -304,7 +311,7 @@
           <div class="slip-line"><span>Total stake</span><strong id="slip-stake">£0.00</strong></div>
           <div class="slip-line"><span>Potential returns</span><strong id="slip-return">£0.00</strong></div>
           <div class="slip-line slip-pot" id="slip-pot-line" hidden><span>Round pot · <span id="slip-players">0</span> players · <span id="slip-viewers">0</span> in the room</span><strong id="slip-pot">£0.00</strong></div>
-          <div class="slip-line slip-pot" id="slip-mine-line" hidden><span>Your stake in this round</span><strong id="slip-mine">£0.00</strong></div>
+          <div class="slip-line slip-pot" id="slip-mine-line" hidden><span id="slip-mine-label">Your stake in this round</span><strong id="slip-mine">£0.00</strong></div>
           <div class="round-meter" id="round-meter" hidden><span id="round-meter-fill"></span></div>
           <p class="round-status" id="round-status" role="status">Pick a chip, tap zones, then place your bet.</p>
           <div class="slip-actions">
@@ -338,7 +345,7 @@
   </div>
 
   <footer class="footer">
-    <span id="data-source">Match data: Opta</span>
+    <span id="data-source">Data provided by Opta</span>
     <span>18+ · Please gamble responsibly. Internal prototype, play money only.</span>
   </footer>
 

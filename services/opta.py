@@ -7,13 +7,16 @@ EVENT_NAMES = {
     27: "Start delay", 28: "End delay", 30: "End", 32: "Start", 34: "Team set up",
     37: "Collection end", 38: "Temp goal", 39: "Temp attempt", 40: "Formation change",
     41: "Punch", 43: "Deleted event", 44: "Aerial", 45: "Challenge", 49: "Ball recovery",
-    50: "Dispossessed", 51: "Error", 61: "Ball touch", 65: "Contentious referee decision",
+    50: "Dispossessed", 51: "Error", 55: "Offside provoked", 61: "Ball touch", 65: "Contentious referee decision",
     70: "Injury time announcement", 74: "Blocked pass", 84: "Deleted after review",
 }
 
 PASS = 1
+OFFSIDE_PASS = 2
 FOUL = 4
+OUT = 5
 CORNER = 6
+OFFSIDE_PROVOKED = 55
 MISS, POST, ATTEMPT_SAVED, GOAL = 13, 14, 15, 16
 SHOTS = frozenset({MISS, POST, ATTEMPT_SAVED, GOAL})
 CARD = 17

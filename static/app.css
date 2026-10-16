@@ -171,6 +171,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--blue); outline-
 }
 
 .market-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.system-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
 .mtab {
   border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 14px; font-size: 14px; font-weight: 700;
   background: var(--surface); color: var(--ink);

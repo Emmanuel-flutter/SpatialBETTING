@@ -27,6 +27,10 @@ DEMO_MATCHES = {
                     "odds": "data/pricing/demo_j03wmx.json"},
 }
 
+# Odds for live matches (the roulette's Odds system): the DFL-trained table from tools/build_odds.py, priced from
+# the newest on-ball Opta event. Internal play-money demo only. Empty turns live odds off.
+LIVE_ODDS_TABLE = os.getenv("LIVE_ODDS_TABLE", "data/pricing/demo_j03wmx.json")
+
 KAFKA_CONSUMER_CONFIG = {
     "bootstrap.servers": CONFLUENT_BOOTSTRAP_SERVER,
     "security.protocol": "SASL_SSL",
